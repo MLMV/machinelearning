@@ -1,0 +1,122 @@
+---
+title: "Quantified self movement analysis"
+author: "MLMV"
+date: "29 January 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+library(ggplot2)
+library(rpart)
+library(randomForest)
+```
+
+
+***
+### Executive summary
+
+Using Fitbit or similar devices, many people like to quantify how much of a particular activity they do. However they rarely quantify *how well* they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts in 5 different ways correctly and incorrectly, and to build a model that can predict the manner in which they did the exercise.
+
+
+
+***
+### Data & exploratory analysis
+The data for this project comes from http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises.
+
+```{r load_data}
+training = read.csv("pml-training.csv", na = c("", "NA"))
+testing = read.csv("pml-testing.csv", na = c("", "NA"))
+```
+
+Before starting the modeling, we do some data profiling. The data consists of `r dim(training)[2]` variables, with `r dim(training)[1]` observations in a training set and `r dim(testing)[1]` additional observations in a testing set. The outcome variable "classe" is roughly evenly distributed, overall and across users, with some prevalence for classe A.
+
+```{r fig.height = 2.5}
+par(mfrow = c(1,2), cex = 0.6)
+barplot(table(training$classe), main = "Activity by classe", xlab = "Classe", ylab = "Count")
+plot(classe ~ user_name, data = training, main = "Activity by user", xlab = "User", ylab = "Classe")
+```
+
+We also find that are `r length(which(colSums(is.na(training)) > 0))` variables 
+with missing values in the set; with a proportion of missing values as high as 
+98 percent. (For the code used to quantify missing values, refer to the 
+appendix.) For such variables an imputation strategy will not give reasonable
+results, so we will omit them from our prediction models. As the first column is
+only a record ID with no relation to the outcome, we will omit that too. This
+leaves us with 58 predictor variables and the outcome.
+
+```{r subset}
+NAcols <- c(1, which(colSums(is.na(training)) > 0))
+newtraining <- training[,-NAcols]
+newtesting <- testing[,-NAcols]
+```
+
+
+
+***
+### Model selection and training
+
+For this exercise we use a random forests method, including cross-validation. To
+do this, we use the train function from the caret package, and specify the
+method as "rf". We specify the number of trees to grow as 10.
+
+```{r train}
+set.seed(54321)
+fit1 <- train(classe ~., method = "rf", data = newtraining, trControl = trainControl(method = "cv"), number = 3, importance = TRUE, ntree = 10)
+```
+
+
+
+***
+### Model evaluation
+
+The resulting random forest is summarized as follows.
+
+```{r rfmodel}
+print(fit1, digits = 3)
+```
+
+By using the varImp function we can evaluate which features have the greatest importance within the model.
+
+```{r importance}
+varI <- varImp(fit1, conditional = TRUE)
+plot(varI, top = 10)
+```
+
+We can evaluate the model performance by looking at the 'finalmodel' component.
+The confusion matrix indicates that in the vast majority of cases, we have
+correctly predicted the outcomes. The estimated out of bag error rate is 0.42%.
+
+```{r performance}
+fit1$finalModel
+```
+
+
+
+***
+### Prediction
+
+Finally, we use the predict function to predict the 20 different test cases.
+```{r predict}
+pred1 <- predict(fit1, newtesting)
+pred1
+```
+
+
+
+***
+### Appendix
+
+####References
+
+* Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative
+Activity Recognition of Weight Lifting Exercises. Proceedings of 4th 
+International Conference in Cooperation with SIGCHI (Augmented Human '13) . 
+Stuttgart, Germany: ACM SIGCHI, 2013.
+
+#### Code for quantifying missing values
+
+* How many variables have missing values? `length(which(colSums(is.na(training)) > 0))`
+* How many missing values in each variable? `sapply(training, function(x) sum(is.na(x)))`
